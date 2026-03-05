@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Block Puzzle</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    body { margin:0; padding:8px 0 24px; display:flex; justify-content:center; background:linear-gradient(160deg,#1a0533 0%,#3a1060 45%,#1a0a2e 100%); min-height:100vh; }
+    main { max-width: 740px; width:100%; padding: 16px; font-family: system-ui, sans-serif; background:rgba(255,255,255,0.06); border-radius:20px; box-shadow:0 8px 40px rgba(0,0,0,0.5); position:relative; }
+    header { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; margin-bottom:12px; color:rgba(255,255,255,0.92); }
+    #hud { display:flex; flex-direction:column; gap:4px; }
+    #player { font-weight:600; }
+    #board {
+      display:grid; grid-template-columns: repeat(10, var(--cell));
+      grid-auto-rows: var(--cell); gap:4px;
+      background:#0e0a2a; padding:6px; border-radius:12px;
+      border:1px solid rgba(255,255,255,0.10);
+      position:relative;
+      overflow:hidden;
+      touch-action:none;
+      box-shadow: inset 0 2px 16px rgba(0,0,0,0.6), 0 4px 20px rgba(0,0,0,0.4);
+    }
+    .cell {
+      width:var(--cell); height:var(--cell);
+      border-radius:8px;
+      border:none;
+      outline:1px solid rgba(255,255,255,0.07);
+      outline-offset:-1px;
+      background:rgba(255,255,255,0.05);
+      position:relative;
+      overflow:hidden;
+    }
+    .cell.filled {
+      background:
+        /* oval specular highlight — top-centre, like a Bejeweled gem */
+        radial-gradient(ellipse 82% 58% at 50% 18%,
+          rgba(255,255,255,0.92) 0%,
+          rgba(255,255,255,0.48) 28%,
+          rgba(255,255,255,0.00) 68%
+        ),
+        /* depth: slight lift at top, shadow at bottom */
+        linear-gradient(180deg,
+          rgba(255,255,255,0.10) 0%,
+          rgba(0,0,0,0.32) 100%
+        ),
+        var(--color);
+      outline-color: rgba(255,255,255,0.92);
+      box-shadow:
+        inset 0 2px 8px  rgba(255,255,255,0.78),
+        inset 0 -3px 10px rgba(0,0,0,0.42),
+        0 3px 10px rgba(0,0,0,0.35);
+    }
+    #game-area { display:flex; gap:16px; align-items:flex-start; }
+    #sidebar   { display:flex; flex-direction:column; gap:14px; align-items:flex-start; padding-top:2px; }
+    #tray { display:flex; flex-direction:column; gap:12px; }
+    .piece {
+      display:grid; grid-template-columns: repeat(4, 20px); grid-auto-rows:20px; gap:2px;
+      padding:8px; background:rgba(255,255,255,0.07); border:2px solid rgba(255,255,255,0.14); border-radius:12px;
+      cursor:grab; user-select:none; touch-action:none;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+    }
+    .pmini { width:20px; height:20px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:3px; }
+    .pmini.on {
+      background:
+        radial-gradient(ellipse 80% 55% at 50% 18%,
+          rgba(255,255,255,0.88) 0%,
+          rgba(255,255,255,0.00) 68%
+        ),
+        linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(0,0,0,0.28) 100%),
+        var(--color);
+      border-color: rgba(255,255,255,0.72);
+      box-shadow: inset 0 1px 4px rgba(255,255,255,0.65), inset 0 -1px 4px rgba(0,0,0,0.30);
+    }
+    #score { font-weight: bold; }
+    #newgame {
+      background: linear-gradient(145deg,#ff9800,#e65100);
+      color:#fff; border:none; border-radius:10px;
+      padding:10px 18px; font-weight:700; font-size:0.9rem;
+      cursor:pointer;
+      box-shadow: 0 4px 0 rgba(0,0,0,0.4), 0 6px 18px rgba(230,81,0,0.45);
+      transition: transform 0.1s, box-shadow 0.1s;
+      user-select:none;
+    }
+    #newgame:hover  { filter:brightness(1.12); }
+    #newgame:active { transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,0.4), 0 2px 8px rgba(230,81,0,0.3); }
+    :root { --cell: 36px; --pcell: 28px; }
+
+    #discard-area {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      touch-action: none;
+    }
+    #discard-label {
+      color: rgba(255,255,255,0.50);
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    #discard-pile {
+      display: grid;
+      grid-template-columns: repeat(4, var(--pcell));
+      grid-auto-rows: var(--pcell);
+      gap: 3px;
+      background: #0e0a2a;
+      padding: 5px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.10);
+      position: relative;
+      touch-action: none;
+      box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+    }
+    .dcell {
+      width: var(--pcell); height: var(--pcell);
+      border-radius: 5px;
+      background: rgba(255,255,255,0.05);
+      outline: 1px solid rgba(255,255,255,0.07);
+      outline-offset: -1px;
+      position: relative;
+      overflow: hidden;
+    }
+    .dcell.filled {
+      background:
+        radial-gradient(ellipse 82% 58% at 50% 18%,
+          rgba(255,255,255,0.85) 0%,
+          rgba(255,255,255,0.00) 68%
+        ),
+        linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(0,0,0,0.30) 100%),
+        var(--color);
+      outline-color: rgba(255,255,255,0.80);
+      box-shadow:
+        inset 0 1px 5px rgba(255,255,255,0.65),
+        inset 0 -2px 6px rgba(0,0,0,0.35);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div id="hud">
+        <div id="player">Player: —</div>
+        <div id="score">Score: 0</div>
+        <div id="highscore">High Score: 0</div>
+      </div>
+      <button id="newgame">New Game</button>
+    </header>
+    <div id="game-area">
+      <div id="board"></div>
+      <div id="sidebar">
+        <div id="tray"></div>
+        <div id="discard-area">
+          <div id="discard-label">Discard</div>
+          <div id="discard-pile"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

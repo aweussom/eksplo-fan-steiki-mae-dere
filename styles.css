@@ -1,0 +1,134 @@
+/* Allow smooth pointer-based dragging on touch screens */
+#board, #tray { touch-action: none; }
+
+/* Bejeweled diagonal shine — sweeps only across filled blocks once every 16 s.
+   Each cell fires with a delay derived from its board position (r+c) so the
+   highlight travels as one diagonal wave, top-left → bottom-right. */
+.cell.filled::after {
+  content: '';
+  position: absolute;
+  top: -10%; left: 0;
+  width: 55%; height: 120%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.70) 50%,
+    transparent 100%
+  );
+  pointer-events: none;
+  animation: gem-wipe 16s linear infinite;
+  animation-delay: var(--wipe-delay, -6.08s);
+}
+
+@keyframes gem-wipe {
+  /* parked off-screen left, invisible */
+  0%,  87%  { transform: skewX(-12deg) translateX(-200%); opacity: 0; }
+  /* enter */
+  88%       { transform: skewX(-12deg) translateX(-200%); opacity: 1; }
+  /* sweep across and exit */
+  97%       { transform: skewX(-12deg) translateX( 300%); opacity: 1; }
+  98%, 100% { transform: skewX(-12deg) translateX( 300%); opacity: 0; }
+}
+
+/* Block pop on placement */
+@keyframes cell-pop {
+  0%   { transform: scale(0.5); }
+  65%  { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+.cell-pop { animation: cell-pop 0.28s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+/* Board shake on big clear (3+ lines) */
+@keyframes board-shake {
+  0%,100% { transform: translate(0,0); }
+  20%     { transform: translate(-5px, 2px); }
+  40%     { transform: translate( 5px,-3px); }
+  60%     { transform: translate(-4px, 2px); }
+  80%     { transform: translate( 4px,-1px); }
+}
+.board-shake { animation: board-shake 0.45s ease-in-out; }
+
+/* Floating +score */
+@keyframes score-float {
+  0%   { transform: translateY(0)    scale(1);    opacity: 1; }
+  20%  { transform: translateY(-8px) scale(1.25); opacity: 1; }
+  100% { transform: translateY(-64px)scale(0.9);  opacity: 0; }
+}
+.score-float {
+  position: absolute;
+  font-weight: 900;
+  font-size: 1.5rem;
+  color: #ffd600;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.55), 0 0 14px rgba(255,214,0,0.5);
+  pointer-events: none;
+  animation: score-float 1.1s ease-out forwards;
+  z-index: 200;
+  white-space: nowrap;
+}
+
+/* The floating preview while dragging */
+#drag-ghost {
+  position: fixed; 
+  pointer-events: none;
+  z-index: 9999;
+}
+
+#drag-ghost .cell {
+  width: var(--cell);
+  height: var(--cell);
+  border-radius: 4px;
+  border: none;
+  outline: 1px solid #d1d9ec;
+  outline-offset: -1px;
+  box-sizing: border-box;
+  background: rgba(255,255,255,0.85);
+}
+
+#drag-ghost .cell.filled {
+  background: var(--color);
+  outline-color: rgba(255,255,255,0.55);
+}
+
+/* Optional: highlight board when a drag is active */
+#board.drag-active { outline: 2px dashed #1976d2; outline-offset: 6px; }
+
+/* ---- Bomb piece tray styles ---- */
+.piece.bomb {
+  border-color: rgba(255,109,0,0.70);
+  box-shadow: 0 4px 14px rgba(255,109,0,0.45), 0 0 18px rgba(255,109,0,0.30);
+  position: relative;
+}
+.piece.super-bomb {
+  border-color: rgba(224,64,251,0.75);
+  box-shadow: 0 4px 14px rgba(224,64,251,0.55), 0 0 22px rgba(224,64,251,0.35);
+  position: relative;
+}
+/* skull overlay on top of the mini-grid */
+.piece.bomb::before,
+.piece.super-bomb::before {
+  content: '💀';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 5;
+}
+.piece.bomb::before {
+  font-size: 1.3rem;
+  filter: drop-shadow(0 0 5px rgba(255,80,0,0.9));
+}
+.piece.super-bomb::before {
+  font-size: 1.65rem;
+  filter: drop-shadow(0 0 8px rgba(220,0,255,1.0));
+  animation: skull-pulse 0.9s ease-in-out infinite;
+}
+@keyframes skull-pulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1.0); }
+  50%       { transform: translate(-50%, -50%) scale(1.22); }
+}
+
+/* ---- Discard pile drag-over highlight ---- */
+#discard-pile.drag-over {
+  border-color: rgba(255,255,255,0.38);
+  box-shadow: inset 0 2px 10px rgba(0,0,0,0.5), 0 0 18px rgba(255,255,255,0.12);
+}
