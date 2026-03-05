@@ -9,10 +9,12 @@ const state = {
   discardPile: Array.from({length:PILE_SIZE},  () => Array(PILE_SIZE).fill(null)),
   score: 0,
   next: [],
-  dragging:   null,   // { idx, cells, color, isBomb, bombType }
-  ghost:      null,
-  shadow:     null,   // board overlay preview
-  pileShadow: null,   // discard pile overlay preview
+  dragging:    null,   // { idx, cells, color, isBomb, bombType }
+  ghost:       null,
+  shadow:      null,   // board overlay preview
+  pileShadow:  null,   // discard pile overlay preview
+  falling:     false,  // true while Tetris gravity animation is running
+  tetrisMode:  false,
   profile: loadProfile()
 };
 
@@ -23,7 +25,9 @@ const discardAreaEl = document.getElementById("discard-area");   // wrapper — 
 const scoreEl       = document.getElementById("score");
 const playerEl    = document.getElementById("player");
 const highScoreEl = document.getElementById("highscore");
-const newBtn      = document.getElementById("newgame");
+const newBtn        = document.getElementById("newgame");
+const tetrisModeEl  = document.getElementById("tetris-mode");
+const FALL_TICK_MS  = 780;
 
 function cellSizePx() {
   const firstCell = boardEl.querySelector(".cell");
@@ -143,7 +147,7 @@ function place(cells, color, r, c) {
     cells.map(([dr, dc]) => (r + dr) + "," + (c + dc)).filter(k => !willClear.has(k))
   );
 
-  const { total: cleared, rowCount, colCount } = clearFullWithExplosion();
+  const { total: cleared, rowCount, colCount, clearedRows } = clearFullWithExplosion();
   const points = cells.length + 10 * cleared;
   state.score += points;
   if (cleared > 0) floatScore(points);
@@ -155,6 +159,8 @@ function place(cells, color, r, c) {
   } else if (rowCount >= 2 || colCount >= 2) {
     spawnBomb("regular");
   }
+
+  return { rowCount, colCount, clearedRows };
 }
 
 /* -------------------- Bomb logic -------------------- */
@@ -252,7 +258,7 @@ function clearFullWithExplosion() {
     for (let r = 0; r < BOARD_SIZE; r++) if (!state.board[r][c]) { ok = false; break; }
     if (ok) cols.push(c);
   }
-  if (!rows.length && !cols.length) return { total: 0, rowCount: 0, colCount: 0 };
+  if (!rows.length && !cols.length) return { total: 0, rowCount: 0, colCount: 0, clearedRows: [] };
 
   const toClear = new Map();
   for (const r of rows)
@@ -270,7 +276,7 @@ function clearFullWithExplosion() {
   drawBoard();
   explodeParticles(Array.from(toClear.values()), rows.length + cols.length);
 
-  return { total: rows.length + cols.length, rowCount: rows.length, colCount: cols.length };
+  return { total: rows.length + cols.length, rowCount: rows.length, colCount: cols.length, clearedRows: rows };
 }
 
 /* -------------------- Canvas particle system -------------------- */
@@ -280,6 +286,10 @@ let _pCtx    = null;
 const _pList = [];
 let _rafId   = null;
 let _justPlaced = null;
+
+// Tetris fall pause/resume handles
+let _fallTick    = null;   // the tick fn to call when resuming
+let _fallTimeout = null;   // current setTimeout id (null when paused)
 
 function _ensureCanvas() {
   if (_pCanvas && _pCanvas.parentNode === boardEl) return;
@@ -344,6 +354,79 @@ function _tickParticles() {
   }
   _pCtx.globalAlpha = 1;
   _rafId = _pList.length ? requestAnimationFrame(_tickParticles) : null;
+}
+
+/* -------------------- Tetris gravity -------------------- */
+
+// Move every non-frozen cell that has empty space directly below it down one row.
+// frozenSet — positions (r+","+c) of cells that were below the cleared line;
+//   they act as permanent anchors and never move.
+// Returns true if anything moved (animation should continue).
+function applyGravityStep(frozenSet) {
+  let moved = false;
+  // Scan bottom-up so each cell falls exactly 1 row per tick, independently
+  for (let r = BOARD_SIZE - 2; r >= 0; r--) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (!state.board[r][c]) continue;
+      if (frozenSet.has(r + ',' + c)) continue;   // anchor — never moves
+      if (state.board[r + 1][c]) continue;          // something solid below
+      state.board[r + 1][c] = state.board[r][c];
+      state.board[r][c] = null;
+      moved = true;
+    }
+  }
+  return moved;
+}
+
+// Animate gravity ticks until the board is fully settled, then call callback.
+// clearedRows — array of row indices that were just cleared; cells in rows
+//   BELOW the lowest cleared row are frozen (they stay put); cells above fall
+//   freely through any empty space until they land on a frozen cell or the floor.
+// If tetrisMode is off, calls callback immediately.
+function animateFall(clearedRows, callback) {
+  if (!state.tetrisMode || !clearedRows.length) { callback(); return; }
+
+  // Cells below the lowest cleared row are anchors — they don't participate.
+  const lowestCleared = Math.max(...clearedRows);
+  const frozenSet = new Set();
+  for (let r = lowestCleared + 1; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (state.board[r][c]) frozenSet.add(r + ',' + c);
+    }
+  }
+
+  state.falling = true;
+  function tick() {
+    _fallTimeout = null;
+    const moved = applyGravityStep(frozenSet);
+    drawBoard();
+    if (moved) {
+      _fallTick    = tick;
+      _fallTimeout = setTimeout(tick, FALL_TICK_MS);
+    } else {
+      state.falling = false;
+      _fallTick = _fallTimeout = null;
+      callback();
+    }
+  }
+  _fallTick    = tick;
+  _fallTimeout = setTimeout(tick, FALL_TICK_MS);
+}
+
+function pauseFall() {
+  if (_fallTimeout !== null) {
+    clearTimeout(_fallTimeout);
+    _fallTimeout = null;
+    // _fallTick is preserved so resumeFall() can restart the same tick
+    boardEl.classList.add("fall-paused");
+  }
+}
+
+function resumeFall() {
+  boardEl.classList.remove("fall-paused");
+  if (_fallTick && state.falling && _fallTimeout === null) {
+    _fallTimeout = setTimeout(_fallTick, FALL_TICK_MS);
+  }
 }
 
 /* -------------------- Game-over check -------------------- */
@@ -413,6 +496,7 @@ function newThree() {
 /* -------------------- Drag system -------------------- */
 
 function startDrag(idx, x, y) {
+  if (state.falling) pauseFall();
   const p = state.next[idx];
   state.dragging = {
     idx,
@@ -516,6 +600,8 @@ function updatePileShadow(x, y) {
 
 function onPointerUp(ev) {
   if (!state.dragging) return;
+  const wasFalling = state.falling; // true when drag interrupted an in-progress fall
+
   const { idx, cells, color, isBomb, bombType } = state.dragging;
   discardEl.classList.remove("drag-over");
 
@@ -552,14 +638,28 @@ function onPointerUp(ev) {
   const c    = Math.floor((ev.clientX - br.left + gap / 2) / step);
 
   if (canPlace(cells, r, c)) {
-    place(cells, color, r, c);
-    if (isBomb) triggerBombBlast(cells, r, c, bombType);
-    state.next[idx] = null;
-    drawBoard();
-    drawTray();
-    _justPlaced = null;
-    if (state.next.every(x => !x)) newThree();
-    if (!anyMovesLeft()) handleGameOver();
+    const { rowCount, clearedRows } = place(cells, color, r, c);
+    _justPlaced = null;  // clear before any animation redraws
+
+    const afterSettle = () => {
+      if (isBomb) triggerBombBlast(cells, r, c, bombType);
+      state.next[idx] = null;
+      drawBoard();
+      drawTray();
+      if (state.next.every(x => !x)) newThree();
+      if (!anyMovesLeft()) handleGameOver();
+      cleanupDrag();
+    };
+
+    if (!wasFalling && state.tetrisMode && rowCount > 0) {
+      // No fall was in progress — start one for the new cleared rows
+      animateFall(clearedRows, afterSettle);
+    } else {
+      // Fall was paused (or tetrisMode off / no rows cleared) — finalize now;
+      // cleanupDrag inside afterSettle will call resumeFall() to unpause.
+      afterSettle();
+    }
+    return;
   }
   cleanupDrag();
 }
@@ -571,6 +671,7 @@ function cleanupDrag() {
   discardEl.classList.remove("drag-over");
   state.ghost = state.shadow = state.pileShadow = state.dragging = null;
   window.removeEventListener("pointermove", onPointerMove);
+  resumeFall();  // no-op if no fall was paused
 }
 
 /* -------------------- Game lifecycle -------------------- */
@@ -599,6 +700,10 @@ newBtn.addEventListener("click", () => {
   const updated = recordHighScoreIfBetter();
   if (updated) updateHud();
   newGame();
+});
+
+tetrisModeEl.addEventListener("change", () => {
+  state.tetrisMode = tetrisModeEl.checked;
 });
 
 newGame();
