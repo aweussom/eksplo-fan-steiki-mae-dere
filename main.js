@@ -152,7 +152,7 @@ function place(cells, color, r, c) {
   // Spawn bonus piece based on what was cleared
   if (rowCount >= 1 && colCount >= 1) {
     spawnBomb("super");
-  } else if (rowCount >= 2) {
+  } else if (rowCount >= 2 || colCount >= 2) {
     spawnBomb("regular");
   }
 }
