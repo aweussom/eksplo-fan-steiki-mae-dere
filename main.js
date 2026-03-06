@@ -94,7 +94,7 @@ function drawTray() {
       if (!state.next[i]) return;
       ev.preventDefault();
       startDrag(i, ev.clientX, ev.clientY);
-      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointermove", onPointerMove, { passive: false });
       window.addEventListener("pointerup", onPointerUp, { once: true });
     });
 
@@ -859,5 +859,18 @@ easyModeEl.addEventListener("change", () => {
   discardEl.classList.remove("pile-hint"); // cancel any blink when hiding
   updateHud();
 });
+
+// Board = 10 × 2.25rem cells + 9 × 0.25rem gaps + 2 × 0.375rem padding = 25.5rem wide
+// Add 2 × 1rem main padding → 27.5rem total. Solve for the font-size that fills viewport width.
+// Cap at 16px (= original 36px cell) so desktop never over-scales.
+function scaleToFit() {
+  const boardRems = 10 * 2.25 + 9 * 0.25 + 2 * 0.375; // 25.5
+  const fs = Math.min(window.innerWidth / (boardRems + 2), 16);
+  document.documentElement.style.fontSize = Math.max(fs, 8) + "px";
+}
+
+scaleToFit();
+window.addEventListener("resize", scaleToFit);
+window.addEventListener("orientationchange", scaleToFit);
 
 newGame();

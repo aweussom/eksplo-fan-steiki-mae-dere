@@ -6,15 +6,15 @@
   <title>Block Puzzle</title>
   <link rel="stylesheet" href="styles.css" />
   <style>
-    body { margin:0; padding:8px 0 24px; display:flex; justify-content:center; background:linear-gradient(160deg,#1a0533 0%,#3a1060 45%,#1a0a2e 100%); min-height:100vh; }
-    main { max-width: 740px; width:100%; padding: 16px; font-family: system-ui, sans-serif; background:rgba(255,255,255,0.06); border-radius:20px; box-shadow:0 8px 40px rgba(0,0,0,0.5); position:relative; }
+    body { margin:0; padding:8px 0 24px; display:flex; justify-content:center; background:linear-gradient(160deg,#1a0533 0%,#3a1060 45%,#1a0a2e 100%); min-height:100vh; touch-action:none; }
+    main { max-width: 740px; width:100%; padding: 1rem; font-family: system-ui, sans-serif; background:rgba(255,255,255,0.06); border-radius:20px; box-shadow:0 8px 40px rgba(0,0,0,0.5); position:relative; }
     header { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; margin-bottom:12px; color:rgba(255,255,255,0.92); }
     #hud { display:flex; flex-direction:column; gap:4px; }
     #player { font-weight:600; }
     #board {
       display:grid; grid-template-columns: repeat(10, var(--cell));
-      grid-auto-rows: var(--cell); gap:4px;
-      background:#0e0a2a; padding:6px; border-radius:12px;
+      grid-auto-rows: var(--cell); gap:0.25rem;
+      background:#0e0a2a; padding:0.375rem; border-radius:12px;
       border:1px solid rgba(255,255,255,0.10);
       position:relative;
       overflow:hidden;
@@ -51,16 +51,16 @@
         inset 0 -3px 10px rgba(0,0,0,0.42),
         0 3px 10px rgba(0,0,0,0.35);
     }
-    #game-area { display:flex; gap:16px; align-items:flex-start; }
-    #sidebar   { display:flex; flex-direction:row; gap:12px; align-items:flex-start; padding-top:2px; }
-    #tray { display:flex; flex-direction:column; gap:12px; }
+    #game-area { display:flex; gap:1rem; align-items:flex-start; }
+    #sidebar   { display:flex; flex-direction:row; gap:0.75rem; align-items:flex-start; padding-top:0.125rem; }
+    #tray { display:flex; flex-direction:column; gap:0.75rem; }
     .piece {
-      display:grid; grid-template-columns: repeat(4, 20px); grid-auto-rows:20px; gap:2px;
-      padding:8px; background:rgba(255,255,255,0.07); border:2px solid rgba(255,255,255,0.14); border-radius:12px;
+      display:grid; grid-template-columns: repeat(4, var(--tcell)); grid-auto-rows:var(--tcell); gap:0.125rem;
+      padding:0.5rem; background:rgba(255,255,255,0.07); border:2px solid rgba(255,255,255,0.14); border-radius:12px;
       cursor:grab; user-select:none; touch-action:none;
       box-shadow: 0 4px 14px rgba(0,0,0,0.35);
     }
-    .pmini { width:20px; height:20px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:3px; }
+    .pmini { width:var(--tcell); height:var(--tcell); background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:3px; }
     .pmini.on {
       background:
         radial-gradient(ellipse 80% 55% at 50% 18%,
@@ -84,7 +84,7 @@
     }
     #newgame:hover  { filter:brightness(1.12); }
     #newgame:active { transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,0.4), 0 2px 8px rgba(230,81,0,0.3); }
-    :root { --cell: 36px; --pcell: 28px; }
+    :root { --cell: 2.25rem; --pcell: 1.75rem; --tcell: 1.25rem; }
     #header-right { display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
     #tetris-label { color:rgba(255,255,255,0.70); font-size:0.8rem; cursor:pointer; user-select:none; }
     #easy-label   { color:rgba(100,220,100,0.85);  font-size:0.8rem; cursor:pointer; user-select:none; }
@@ -93,7 +93,7 @@
       display: flex;
       flex-direction: column;
       align-items: flex-start;
-      gap: 4px;
+      gap: 0.25rem;
       touch-action: none;
     }
     #discard-label {
@@ -107,9 +107,9 @@
       display: grid;
       grid-template-columns: repeat(4, var(--pcell));
       grid-auto-rows: var(--pcell);
-      gap: 3px;
+      gap: 0.1875rem;
       background: #0e0a2a;
-      padding: 5px;
+      padding: 0.3125rem;
       border-radius: 10px;
       border: 1px solid rgba(255,255,255,0.10);
       position: relative;
@@ -137,6 +137,12 @@
       box-shadow:
         inset 0 1px 5px rgba(255,255,255,0.65),
         inset 0 -2px 6px rgba(0,0,0,0.35);
+    }
+    @media (max-width: 600px) {
+      #game-area { flex-direction: column; }
+      #sidebar   { flex-direction: column; align-items: center; width: 100%; }
+      #tray      { flex-direction: row; justify-content: center; }
+      #discard-area { align-items: center; }
     }
   </style>
 </head>
