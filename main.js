@@ -97,7 +97,7 @@ function drawTray() {
       // Do NOT call ev.preventDefault() here — on iOS Safari it suppresses
       // subsequent pointermove events. CSS touch-action:none handles scroll prevention.
       wrap.setPointerCapture(ev.pointerId);
-      startDrag(i, ev.clientX, ev.clientY);
+      startDrag(i, ev.clientX, ev.clientY, ev.pointerType);
       window.addEventListener("pointermove", onPointerMove, { passive: false });
       window.addEventListener("pointerup", onPointerUp, { once: true });
       window.addEventListener("pointercancel", cleanupDrag, { once: true });
@@ -634,20 +634,49 @@ function newThree() {
 
 /* -------------------- Drag system -------------------- */
 
-function startDrag(idx, x, y) {
+function startDrag(idx, x, y, pointerType) {
   if (state.falling) pauseFall();
   const p = state.next[idx];
+  const isTouch = pointerType === "touch";
+
+  // Compute piece bounding box so ghost can be sized to the actual piece
+  const { size, gap } = cellSizePx();
+  const cs = p.cells;
+  const minR = Math.min(...cs.map(([r]) => r));
+  const maxR = Math.max(...cs.map(([r]) => r));
+  const minC = Math.min(...cs.map(([, c]) => c));
+  const maxC = Math.max(...cs.map(([, c]) => c));
+  const ghostW = (maxC - minC + 1) * (size + gap) - gap;
+  const ghostH = (maxR - minR + 1) * (size + gap) - gap;
+  // Lift piece above thumb: keep ghost bottom ~30px clear of raw touch point
+  const liftOffset = isTouch ? ghostH + 30 : 0;
+
   state.dragging = {
     idx,
     cells:    p.cells,
     color:    p.color,
     isBomb:   p.isBomb   || false,
-    bombType: p.bombType || null
+    bombType: p.bombType || null,
+    liftOffset, ghostW, ghostH,
+    snappedR: null, snappedC: null
   };
 
   const ghost = document.createElement("div");
   ghost.id = "drag-ghost";
-  ghost.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:20px;height:20px;pointer-events:none;background:#0000;`;
+  if (isTouch) {
+    // Visible ghost: render piece cells at board scale, floats above finger
+    ghost.style.cssText = `position:fixed;width:${ghostW}px;height:${ghostH}px;pointer-events:none;z-index:100;`;
+    cs.forEach(([dr, dc]) => {
+      const chip = document.createElement("div");
+      chip.style.cssText = `position:absolute;width:${size}px;height:${size}px;` +
+        `left:${(dc - minC) * (size + gap)}px;top:${(dr - minR) * (size + gap)}px;` +
+        `background:${p.color};opacity:0.85;border-radius:${Math.round(size * 0.15)}px;` +
+        `box-shadow:0 2px 12px rgba(0,0,0,0.5);`;
+      ghost.appendChild(chip);
+    });
+  } else {
+    ghost.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:20px;height:20px;pointer-events:none;background:#0000;`;
+  }
   document.body.appendChild(ghost);
   state.ghost = ghost;
 
@@ -664,34 +693,79 @@ function startDrag(idx, x, y) {
   state.pileShadow = pileShadow;
 
   moveGhost(x, y);
-  updateShadow(x, y);
+  updateShadow(x, y - liftOffset);
 }
 
 function onPointerMove(ev) {
   if (!state.dragging) return;
   ev.preventDefault();
-  moveGhost(ev.clientX, ev.clientY);
+  const rawX = ev.clientX, rawY = ev.clientY;
+  const effY = rawY - state.dragging.liftOffset;
 
+  moveGhost(rawX, rawY);
+
+  // Pile hit-test uses raw coords: pile is adjacent to tray, finger points at it directly
   const ar = discardAreaEl.getBoundingClientRect();
   const overPile = state.easyMode &&
-                   ev.clientX >= ar.left && ev.clientX <= ar.right &&
-                   ev.clientY >= ar.top  && ev.clientY <= ar.bottom;
+                   rawX >= ar.left && rawX <= ar.right &&
+                   rawY >= ar.top  && rawY <= ar.bottom;
 
   if (overPile) {
     if (state.shadow) state.shadow.innerHTML = "";
-    updatePileShadow(ev.clientX, ev.clientY);
+    state.dragging.snappedR = state.dragging.snappedC = null;
+    updatePileShadow(rawX, rawY);
     discardEl.classList.add("drag-over");
   } else {
     if (state.pileShadow) state.pileShadow.innerHTML = "";
-    updateShadow(ev.clientX, ev.clientY);
+    // Board: use effective (lifted) Y so what you see is where it lands
+    trySnap(rawX, effY);
+    updateShadow(rawX, effY);
     discardEl.classList.remove("drag-over");
   }
 }
 
-function moveGhost(x, y) {
-  if (!state.ghost) return;
-  state.ghost.style.left = x + "px";
-  state.ghost.style.top  = y + "px";
+function moveGhost(rawX, rawY) {
+  if (!state.ghost || !state.dragging) return;
+  const { liftOffset, ghostW, ghostH } = state.dragging;
+  if (liftOffset === 0) {
+    state.ghost.style.left = rawX + "px";
+    state.ghost.style.top  = rawY + "px";
+  } else {
+    // Centre ghost on the effective (lifted) pointer position
+    state.ghost.style.left = (rawX - ghostW / 2) + "px";
+    state.ghost.style.top  = (rawY - liftOffset - ghostH / 2) + "px";
+  }
+}
+
+// Find the nearest valid placement within SNAP_RADIUS cells of the effective
+// pointer and store it in state.dragging.snappedR/C (null = no snap found).
+function trySnap(x, effY) {
+  if (!state.dragging) return;
+  const { size, gap } = cellSizePx();
+  const br   = boardEl.getBoundingClientRect();
+  const step = size + gap;
+  const baseR = Math.floor((effY - br.top  + gap / 2) / step);
+  const baseC = Math.floor((x   - br.left + gap / 2) / step);
+  const { cells } = state.dragging;
+
+  if (canPlace(cells, baseR, baseC)) {
+    state.dragging.snappedR = baseR;
+    state.dragging.snappedC = baseC;
+    return;
+  }
+
+  const SNAP_R = 2;
+  let bestR = null, bestC = null, bestD = Infinity;
+  for (let dr = -SNAP_R; dr <= SNAP_R; dr++) {
+    for (let dc = -SNAP_R; dc <= SNAP_R; dc++) {
+      const d = dr * dr + dc * dc;
+      if (d > SNAP_R * SNAP_R) continue;
+      const r = baseR + dr, c = baseC + dc;
+      if (d < bestD && canPlace(cells, r, c)) { bestD = d; bestR = r; bestC = c; }
+    }
+  }
+  state.dragging.snappedR = bestR;
+  state.dragging.snappedC = bestC;
 }
 
 function updateShadow(x, y) {
@@ -699,9 +773,10 @@ function updateShadow(x, y) {
   const { size, gap } = cellSizePx();
   const br   = boardEl.getBoundingClientRect();
   const step = size + gap;
-  const r    = Math.floor((y - br.top  + gap / 2) / step);
-  const c    = Math.floor((x - br.left + gap / 2) / step);
-  const { cells, color } = state.dragging;
+  let r = Math.floor((y - br.top  + gap / 2) / step);
+  let c = Math.floor((x - br.left + gap / 2) / step);
+  const { cells, color, snappedR, snappedC } = state.dragging;
+  if (snappedR !== null) { r = snappedR; c = snappedC; }
   const valid = canPlace(cells, r, c);
 
   state.shadow.innerHTML = "";
@@ -743,10 +818,10 @@ function onPointerUp(ev) {
   if (!state.dragging) return;
   const wasFalling = state.falling; // true when drag interrupted an in-progress fall
 
-  const { idx, cells, color, isBomb, bombType } = state.dragging;
+  const { idx, cells, color, isBomb, bombType, liftOffset, snappedR, snappedC } = state.dragging;
   discardEl.classList.remove("drag-over");
 
-  // ---- Check drop on discard pile (Easy Mode only) ----
+  // ---- Check drop on discard pile (Easy Mode only, raw coords — pile is beside tray) ----
   const ar = discardAreaEl.getBoundingClientRect();
   const overPile = state.easyMode &&
                    ev.clientX >= ar.left && ev.clientX <= ar.right &&
@@ -774,12 +849,13 @@ function onPointerUp(ev) {
     return;
   }
 
-  // ---- Normal board placement ----
+  // ---- Normal board placement (effective Y + snap) ----
   const { size, gap } = cellSizePx();
   const br   = boardEl.getBoundingClientRect();
   const step = size + gap;
-  const r    = Math.floor((ev.clientY - br.top  + gap / 2) / step);
-  const c    = Math.floor((ev.clientX - br.left + gap / 2) / step);
+  const effY = ev.clientY - liftOffset;
+  const r = snappedR !== null ? snappedR : Math.floor((effY        - br.top  + gap / 2) / step);
+  const c = snappedC !== null ? snappedC : Math.floor((ev.clientX  - br.left + gap / 2) / step);
 
   if (canPlace(cells, r, c)) {
     const { rowCount, colCount, clearedRows, clearedCols } = place(cells, color, r, c);
