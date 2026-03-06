@@ -858,14 +858,29 @@ easyModeEl.addEventListener("change", () => {
   state.easyMode = easyModeEl.checked;
   discardEl.classList.remove("pile-hint"); // cancel any blink when hiding
   updateHud();
+  scaleToFit(); // sidebar width changes; recalculate font-size
 });
 
-// Board = 10 × 2.25rem cells + 9 × 0.25rem gaps + 2 × 0.375rem padding = 25.5rem wide
-// Add 2 × 1rem main padding → 27.5rem total. Solve for the font-size that fills viewport width.
-// Cap at 16px (= original 36px cell) so desktop never over-scales.
+// Solve for the font-size that fills the viewport width.
+// Mobile (≤600px): sidebar stacks below board, so only board width matters.
+// Desktop: include sidebar in the constraint so iPad/PC scale up properly.
+// Cap at 20px (= 45px cell) to keep desktop tasteful.
 function scaleToFit() {
-  const boardRems = 10 * 2.25 + 9 * 0.25 + 2 * 0.375; // 25.5
-  const fs = Math.min(window.innerWidth / (boardRems + 2), 16);
+  const vw       = window.innerWidth;
+  const isMobile = vw <= 600;
+  const boardRems   = 10 * 2.25 + 9 * 0.25 + 2 * 0.375; // 25.5
+  const trayRems    = 4 * 1.25 + 3 * 0.125 + 2 * 0.5;   // 6.375
+  const discardRems = 4 * 1.75 + 3 * 0.1875 + 2 * 0.3125; // 8.1875
+  let totalRems;
+  if (isMobile) {
+    totalRems = boardRems + 2; // board + 2×main-padding; sidebar is below
+  } else {
+    const sidebarRems = state.easyMode
+      ? trayRems + 0.75 + discardRems  // tray + sidebar-gap + discard
+      : trayRems;
+    totalRems = boardRems + 1 + sidebarRems + 2; // board + game-gap + sidebar + main-padding
+  }
+  const fs = Math.min(vw / totalRems, 20);
   document.documentElement.style.fontSize = Math.max(fs, 8) + "px";
 }
 
