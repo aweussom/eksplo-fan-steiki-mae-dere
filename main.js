@@ -92,10 +92,15 @@ function drawTray() {
 
     wrap.addEventListener("pointerdown", (ev) => {
       if (!state.next[i]) return;
-      ev.preventDefault();
+      // setPointerCapture ensures pointermove/pointerup always route back here
+      // even when the finger moves off the piece onto the board.
+      // Do NOT call ev.preventDefault() here — on iOS Safari it suppresses
+      // subsequent pointermove events. CSS touch-action:none handles scroll prevention.
+      wrap.setPointerCapture(ev.pointerId);
       startDrag(i, ev.clientX, ev.clientY);
       window.addEventListener("pointermove", onPointerMove, { passive: false });
       window.addEventListener("pointerup", onPointerUp, { once: true });
+      window.addEventListener("pointercancel", cleanupDrag, { once: true });
     });
 
     const occ = new Set(p ? p.cells.map(rc => rc.join(",")) : []);
@@ -817,6 +822,8 @@ function cleanupDrag() {
   discardEl.classList.remove("drag-over");
   state.ghost = state.shadow = state.pileShadow = state.dragging = null;
   window.removeEventListener("pointermove", onPointerMove);
+  window.removeEventListener("pointerup", onPointerUp);     // no-op if already fired
+  window.removeEventListener("pointercancel", cleanupDrag); // no-op if already fired
   resumeFall();  // no-op if no fall was paused
 }
 
