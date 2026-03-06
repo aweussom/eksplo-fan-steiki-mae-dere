@@ -127,6 +127,15 @@
   50%       { transform: translate(-50%, -50%) scale(1.22); }
 }
 
+/* ---- Discard pile "use me!" hint — blinks amber when board is stuck ---- */
+@keyframes pile-blink {
+  0%, 100% { box-shadow: inset 0 2px 10px rgba(0,0,0,0.5); border-color: rgba(255,255,255,0.10); }
+  50%       { box-shadow: inset 0 2px 10px rgba(0,0,0,0.5), 0 0 26px rgba(255,214,0,0.90); border-color: rgba(255,214,0,0.95); }
+}
+#discard-pile.pile-hint {
+  animation: pile-blink 0.7s ease-in-out 4;
+}
+
 /* ---- Discard pile drag-over highlight ---- */
 #discard-pile.drag-over {
   border-color: rgba(255,255,255,0.38);

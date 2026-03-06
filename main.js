@@ -22,9 +22,10 @@ const boardEl       = document.getElementById("board");
 const trayEl        = document.getElementById("tray");
 const discardEl     = document.getElementById("discard-pile");   // grid — used for position math
 const discardAreaEl = document.getElementById("discard-area");   // wrapper — used for hit detection
-const scoreEl       = document.getElementById("score");
-const playerEl    = document.getElementById("player");
-const highScoreEl = document.getElementById("highscore");
+const scoreEl          = document.getElementById("score");
+const playerEl         = document.getElementById("player");
+const highScoreEl      = document.getElementById("highscore");
+const highScoreTetrisEl = document.getElementById("highscore-tetris");
 const newBtn        = document.getElementById("newgame");
 const tetrisModeEl  = document.getElementById("tetris-mode");
 const FALL_TICK_MS  = 780;
@@ -151,6 +152,7 @@ function place(cells, color, r, c) {
   const points = cells.length + 10 * cleared;
   state.score += points;
   if (cleared > 0) floatScore(points);
+  recordHighScoreIfBetter();
   updateHud();
 
   // Spawn bonus piece based on what was cleared
@@ -219,6 +221,7 @@ function triggerBombBlast(placedCells, r, c, bombType) {
   if (!cellsArr.length) return;
 
   state.score += cellsArr.length;
+  recordHighScoreIfBetter();
   updateHud();
   drawBoard();
   explodeParticles(cellsArr, cellsArr.length > 8 ? 4 : 2);
@@ -485,6 +488,7 @@ function animateFall(clearedRows, clearedCols, callback) {
         const pts = 10 * total;
         state.score += pts;
         floatScore(pts);
+        recordHighScoreIfBetter();
         updateHud();
         // Re-enter the fall animation for the cascade; state.falling stays true.
         animateFall(cr2, cc2, callback);
@@ -530,6 +534,31 @@ function anyMovesLeft() {
   return false;
 }
 
+// Blink the discard pile when the board is stuck but the pile still has room.
+function checkPileHint() {
+  // If any piece fits on the board, no hint needed
+  for (const p of state.next) {
+    if (!p) continue;
+    for (let r = 0; r < BOARD_SIZE; r++)
+      for (let c = 0; c < BOARD_SIZE; c++)
+        if (canPlace(p.cells, r, c)) return;
+  }
+  // Board stuck — see if any piece can be discarded
+  for (const p of state.next) {
+    if (!p) continue;
+    for (let r = 0; r < PILE_SIZE; r++)
+      for (let c = 0; c < PILE_SIZE; c++)
+        if (canPlaceInPile(p.cells, r, c)) {
+          discardEl.classList.remove("pile-hint"); // restart if already blinking
+          void discardEl.offsetWidth;              // force reflow so animation restarts
+          discardEl.classList.add("pile-hint");
+          discardEl.addEventListener("animationend", () =>
+            discardEl.classList.remove("pile-hint"), { once: true });
+          return;
+        }
+  }
+}
+
 /* -------------------- HUD -------------------- */
 
 function ensureNickname() {
@@ -549,10 +578,14 @@ function updateHud() {
   if (playerEl)    playerEl.textContent    = "Player: " + (state.profile.name || "—");
   if (scoreEl)     scoreEl.textContent     = "Score: " + state.score;
   if (highScoreEl) highScoreEl.textContent = "High Score: " + (state.profile.highScore || 0);
+  if (highScoreTetrisEl) {
+    highScoreTetrisEl.style.display  = state.tetrisMode ? "" : "none";
+    highScoreTetrisEl.textContent    = "Tetris Best: " + (state.profile.highScoreTetris || 0);
+  }
 }
 
 function recordHighScoreIfBetter() {
-  return maybeUpdateHighScore(state.profile, state.score);
+  return maybeUpdateHighScore(state.profile, state.score, state.tetrisMode);
 }
 
 function floatScore(points) {
@@ -656,7 +689,8 @@ function updateShadow(x, y) {
     const chip = document.createElement("div");
     chip.style.cssText = `position:absolute;width:${size}px;height:${size}px;` +
       `left:${cc*(size+gap)}px;top:${rr*(size+gap)}px;` +
-      `background:${valid ? color : "red"};opacity:0.4;border-radius:4px;`;
+      `background:${color};opacity:${valid ? 0.6 : 0.35};border-radius:4px;box-sizing:border-box;` +
+      `border:3px solid ${valid ? "rgba(255,255,255,0.90)" : "rgba(255,50,50,0.95)"};`;
     state.shadow.appendChild(chip);
   });
 }
@@ -708,8 +742,10 @@ function onPointerUp(ev) {
       state.next[idx] = null;
       drawDiscardPile();
       drawTray();
+      discardEl.classList.remove("pile-hint");
       if (state.next.every(x => !x)) newThree();
-      if (!anyMovesLeft()) handleGameOver();
+      if (!anyMovesLeft()) { handleGameOver(); return; }
+      checkPileHint();
     }
     cleanupDrag();
     return;
@@ -732,7 +768,14 @@ function onPointerUp(ev) {
       drawBoard();
       drawTray();
       if (state.next.every(x => !x)) newThree();
-      if (!anyMovesLeft()) handleGameOver();
+      // If we interrupted an in-progress fall, the board is still mid-fall:
+      // cells are in intermediate positions, making it look more full than it
+      // is. Skip the game-over check here — the original fall's afterSettle
+      // will run it again once the board is fully settled.
+      if (!wasFalling) {
+        if (!anyMovesLeft()) { handleGameOver(); return; }
+        checkPileHint();
+      }
       cleanupDrag();
     };
 
@@ -775,6 +818,7 @@ function newGame() {
   state.board.forEach(row => row.fill(null));
   state.discardPile.forEach(row => row.fill(null));
   state.score = 0;
+  discardEl.classList.remove("pile-hint");
   updateHud();
   newThree();
   drawBoard();
@@ -789,6 +833,7 @@ newBtn.addEventListener("click", () => {
 
 tetrisModeEl.addEventListener("change", () => {
   state.tetrisMode = tetrisModeEl.checked;
+  updateHud();
 });
 
 newGame();
