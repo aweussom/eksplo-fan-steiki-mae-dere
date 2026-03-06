@@ -1,4 +1,4 @@
-const STORAGE_KEY = "blockblastProfile";
+const STORAGE_KEY = "eksplo-fan-steiki-mae-dereProfile";
 
 export function loadProfile(){
   const blank = { name:"", highScore:0, highScoreTetris:0, highScoreEasy:0 };
