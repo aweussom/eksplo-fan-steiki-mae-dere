@@ -879,9 +879,11 @@ function onPointerUp(ev) {
     };
 
     if (!wasFalling && state.tetrisMode && (rowCount > 0 || colCount > 0)) {
-      // No fall was in progress — clear the drag overlay immediately so the
-      // shadow doesn't persist during the fall animation, then start the fall.
+      // Clear drag overlay and consume the tray slot immediately so the
+      // piece doesn't stay visible in the tray during the fall animation.
       cleanupDrag();
+      state.next[idx] = null;
+      drawTray();
       animateFall(clearedRows, clearedCols, afterSettle);
     } else {
       // Fall was paused (or tetrisMode off / no rows cleared) — finalize now;
