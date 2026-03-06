@@ -15,6 +15,7 @@ const state = {
   pileShadow:  null,   // discard pile overlay preview
   falling:     false,  // true while Tetris gravity animation is running
   tetrisMode:  false,
+  easyMode:    false,
   profile: loadProfile()
 };
 
@@ -24,10 +25,12 @@ const discardEl     = document.getElementById("discard-pile");   // grid — use
 const discardAreaEl = document.getElementById("discard-area");   // wrapper — used for hit detection
 const scoreEl          = document.getElementById("score");
 const playerEl         = document.getElementById("player");
-const highScoreEl      = document.getElementById("highscore");
+const highScoreEl       = document.getElementById("highscore");
 const highScoreTetrisEl = document.getElementById("highscore-tetris");
-const newBtn        = document.getElementById("newgame");
-const tetrisModeEl  = document.getElementById("tetris-mode");
+const highScoreEasyEl   = document.getElementById("highscore-easy");
+const newBtn       = document.getElementById("newgame");
+const tetrisModeEl = document.getElementById("tetris-mode");
+const easyModeEl   = document.getElementById("easy-mode");
 const FALL_TICK_MS  = 780;
 
 function cellSizePx() {
@@ -526,16 +529,19 @@ function anyMovesLeft() {
     for (let r = 0; r < BOARD_SIZE; r++)
       for (let c = 0; c < BOARD_SIZE; c++)
         if (canPlace(p.cells, r, c)) return true;
-    // Discard pile counts as a valid move if piece fits somewhere
-    for (let r = 0; r < PILE_SIZE; r++)
-      for (let c = 0; c < PILE_SIZE; c++)
-        if (canPlaceInPile(p.cells, r, c)) return true;
+    // Discard pile only counts in Easy Mode
+    if (state.easyMode) {
+      for (let r = 0; r < PILE_SIZE; r++)
+        for (let c = 0; c < PILE_SIZE; c++)
+          if (canPlaceInPile(p.cells, r, c)) return true;
+    }
   }
   return false;
 }
 
 // Blink the discard pile when the board is stuck but the pile still has room.
 function checkPileHint() {
+  if (!state.easyMode) return; // pile is hidden in normal mode
   // If any piece fits on the board, no hint needed
   for (const p of state.next) {
     if (!p) continue;
@@ -578,14 +584,23 @@ function updateHud() {
   if (playerEl)    playerEl.textContent    = "Player: " + (state.profile.name || "—");
   if (scoreEl)     scoreEl.textContent     = "Score: " + state.score;
   if (highScoreEl) highScoreEl.textContent = "High Score: " + (state.profile.highScore || 0);
+  // Tetris Best: shown only when Tetris on AND Easy off
   if (highScoreTetrisEl) {
-    highScoreTetrisEl.style.display  = state.tetrisMode ? "" : "none";
-    highScoreTetrisEl.textContent    = "Tetris Best: " + (state.profile.highScoreTetris || 0);
+    highScoreTetrisEl.style.display = (state.tetrisMode && !state.easyMode) ? "" : "none";
+    highScoreTetrisEl.textContent   = "Tetris Best: " + (state.profile.highScoreTetris || 0);
   }
+  // Easy Best: shown whenever Easy Mode is on (folds in Easy+Tetris)
+  if (highScoreEasyEl) {
+    highScoreEasyEl.style.display = state.easyMode ? "" : "none";
+    highScoreEasyEl.textContent   = "Easy Best: " + (state.profile.highScoreEasy || 0);
+  }
+  // Discard pile visible only in Easy Mode
+  if (discardAreaEl) discardAreaEl.style.display = state.easyMode ? "" : "none";
 }
 
 function recordHighScoreIfBetter() {
-  return maybeUpdateHighScore(state.profile, state.score, state.tetrisMode);
+  const mode = state.easyMode ? 'easy' : state.tetrisMode ? 'tetris' : 'normal';
+  return maybeUpdateHighScore(state.profile, state.score, mode);
 }
 
 function floatScore(points) {
@@ -604,8 +619,9 @@ function floatScore(points) {
 /* -------------------- Piece generation -------------------- */
 
 function newThree() {
+  const wKey = state.easyMode ? 'easyWeight' : 'weight';
   state.next = [0, 1, 2].map(() => {
-    const picked = weightedPick(PIECE_SET);
+    const picked = weightedPick(PIECE_SET, wKey);
     return { name: picked.name, color: picked.color, cells: picked.cells.map(([r, c]) => [r, c]) };
   });
   drawTray();
@@ -652,7 +668,8 @@ function onPointerMove(ev) {
   moveGhost(ev.clientX, ev.clientY);
 
   const ar = discardAreaEl.getBoundingClientRect();
-  const overPile = ev.clientX >= ar.left && ev.clientX <= ar.right &&
+  const overPile = state.easyMode &&
+                   ev.clientX >= ar.left && ev.clientX <= ar.right &&
                    ev.clientY >= ar.top  && ev.clientY <= ar.bottom;
 
   if (overPile) {
@@ -724,9 +741,10 @@ function onPointerUp(ev) {
   const { idx, cells, color, isBomb, bombType } = state.dragging;
   discardEl.classList.remove("drag-over");
 
-  // ---- Check drop on discard pile ----
+  // ---- Check drop on discard pile (Easy Mode only) ----
   const ar = discardAreaEl.getBoundingClientRect();
-  const overPile = ev.clientX >= ar.left && ev.clientX <= ar.right &&
+  const overPile = state.easyMode &&
+                   ev.clientX >= ar.left && ev.clientX <= ar.right &&
                    ev.clientY >= ar.top  && ev.clientY <= ar.bottom;
 
   if (overPile) {
@@ -833,6 +851,12 @@ newBtn.addEventListener("click", () => {
 
 tetrisModeEl.addEventListener("change", () => {
   state.tetrisMode = tetrisModeEl.checked;
+  updateHud();
+});
+
+easyModeEl.addEventListener("change", () => {
+  state.easyMode = easyModeEl.checked;
+  discardEl.classList.remove("pile-hint"); // cancel any blink when hiding
   updateHud();
 });
 
