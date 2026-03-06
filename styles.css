@@ -133,6 +133,17 @@
   box-shadow: inset 0 2px 10px rgba(0,0,0,0.5), 0 0 18px rgba(255,255,255,0.12);
 }
 
+/* ---- Tetris fall settled — one-shot white ping when gravity finishes ---- */
+@keyframes fall-settle-ping {
+  0%   { outline-color: rgba(255,255,255,0.90); box-shadow: inset 0 2px 16px rgba(0,0,0,0.6), 0 4px 20px rgba(0,0,0,0.4), 0 0 28px rgba(255,255,255,0.55); }
+  100% { outline-color: rgba(255,255,255,0.00); box-shadow: inset 0 2px 16px rgba(0,0,0,0.6), 0 4px 20px rgba(0,0,0,0.4), 0 0  0px rgba(255,255,255,0.00); }
+}
+#board.fall-settled {
+  outline: 3px solid rgba(255,255,255,0.9);
+  outline-offset: 5px;
+  animation: fall-settle-ping 0.55s ease-out forwards;
+}
+
 /* ---- Tetris fall paused — board pulses amber while a fall is waiting ---- */
 @keyframes fall-pending-pulse {
   0%, 100% { outline-color: rgba(255, 193, 7, 0.25); box-shadow: inset 0 2px 16px rgba(0,0,0,0.6), 0 4px 20px rgba(0,0,0,0.4), 0 0  6px rgba(255,193,7,0.20); }

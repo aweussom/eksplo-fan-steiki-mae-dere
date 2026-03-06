@@ -147,7 +147,7 @@ function place(cells, color, r, c) {
     cells.map(([dr, dc]) => (r + dr) + "," + (c + dc)).filter(k => !willClear.has(k))
   );
 
-  const { total: cleared, rowCount, colCount, clearedRows } = clearFullWithExplosion();
+  const { total: cleared, rowCount, colCount, clearedRows, clearedCols } = clearFullWithExplosion();
   const points = cells.length + 10 * cleared;
   state.score += points;
   if (cleared > 0) floatScore(points);
@@ -160,7 +160,7 @@ function place(cells, color, r, c) {
     spawnBomb("regular");
   }
 
-  return { rowCount, colCount, clearedRows };
+  return { rowCount, colCount, clearedRows, clearedCols };
 }
 
 /* -------------------- Bomb logic -------------------- */
@@ -258,7 +258,7 @@ function clearFullWithExplosion() {
     for (let r = 0; r < BOARD_SIZE; r++) if (!state.board[r][c]) { ok = false; break; }
     if (ok) cols.push(c);
   }
-  if (!rows.length && !cols.length) return { total: 0, rowCount: 0, colCount: 0, clearedRows: [] };
+  if (!rows.length && !cols.length) return { total: 0, rowCount: 0, colCount: 0, clearedRows: [], clearedCols: [] };
 
   const toClear = new Map();
   for (const r of rows)
@@ -276,7 +276,7 @@ function clearFullWithExplosion() {
   drawBoard();
   explodeParticles(Array.from(toClear.values()), rows.length + cols.length);
 
-  return { total: rows.length + cols.length, rowCount: rows.length, colCount: cols.length, clearedRows: rows };
+  return { total: rows.length + cols.length, rowCount: rows.length, colCount: cols.length, clearedRows: rows, clearedCols: cols };
 }
 
 /* -------------------- Canvas particle system -------------------- */
@@ -358,55 +358,140 @@ function _tickParticles() {
 
 /* -------------------- Tetris gravity -------------------- */
 
-// Move every non-frozen cell that has empty space directly below it down one row.
-// frozenSet — positions (r+","+c) of cells that were below the cleared line;
-//   they act as permanent anchors and never move.
+// Move every non-frozen cell one row in the given direction ('down' or 'up').
+// frozenSet — positions (r+","+c) of inner-side cells that never move.
 // Returns true if anything moved (animation should continue).
-function applyGravityStep(frozenSet) {
+function applyGravityStep(frozenSet, dir) {
   let moved = false;
-  // Scan bottom-up so each cell falls exactly 1 row per tick, independently
-  for (let r = BOARD_SIZE - 2; r >= 0; r--) {
-    for (let c = 0; c < BOARD_SIZE; c++) {
-      if (!state.board[r][c]) continue;
-      if (frozenSet.has(r + ',' + c)) continue;   // anchor — never moves
-      if (state.board[r + 1][c]) continue;          // something solid below
-      state.board[r + 1][c] = state.board[r][c];
-      state.board[r][c] = null;
-      moved = true;
+  if (dir === 'up') {
+    // Scan top-down so each cell rises exactly 1 row per tick, independently
+    for (let r = 1; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (!state.board[r][c]) continue;
+        if (frozenSet.has(r + ',' + c)) continue;   // anchor — never moves
+        if (state.board[r - 1][c]) continue;          // something solid above
+        state.board[r - 1][c] = state.board[r][c];
+        state.board[r][c] = null;
+        moved = true;
+      }
+    }
+  } else if (dir === 'down') {
+    // Scan bottom-up so each cell falls exactly 1 row per tick
+    for (let r = BOARD_SIZE - 2; r >= 0; r--) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (!state.board[r][c]) continue;
+        if (frozenSet.has(r + ',' + c)) continue;
+        if (state.board[r + 1][c]) continue;
+        state.board[r + 1][c] = state.board[r][c];
+        state.board[r][c] = null;
+        moved = true;
+      }
+    }
+  } else if (dir === 'left') {
+    // Cells slide left; scan left-to-right so each cell moves 1 col per tick
+    for (let c = 1; c < BOARD_SIZE; c++) {
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        if (!state.board[r][c]) continue;
+        if (frozenSet.has(r + ',' + c)) continue;
+        if (state.board[r][c - 1]) continue;
+        state.board[r][c - 1] = state.board[r][c];
+        state.board[r][c] = null;
+        moved = true;
+      }
+    }
+  } else if (dir === 'right') {
+    // Cells slide right; scan right-to-left so each cell moves 1 col per tick
+    for (let c = BOARD_SIZE - 2; c >= 0; c--) {
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        if (!state.board[r][c]) continue;
+        if (frozenSet.has(r + ',' + c)) continue;
+        if (state.board[r][c + 1]) continue;
+        state.board[r][c + 1] = state.board[r][c];
+        state.board[r][c] = null;
+        moved = true;
+      }
     }
   }
   return moved;
 }
 
 // Animate gravity ticks until the board is fully settled, then call callback.
-// clearedRows — array of row indices that were just cleared; cells in rows
-//   BELOW the lowest cleared row are frozen (they stay put); cells above fall
-//   freely through any empty space until they land on a frozen cell or the floor.
-// If tetrisMode is off, calls callback immediately.
-function animateFall(clearedRows, callback) {
-  if (!state.tetrisMode || !clearedRows.length) { callback(); return; }
+// clearedRows / clearedCols — indices just cleared by the last placement.
+// Rows take priority; column gravity only fires when no rows were cleared.
+// Direction is chosen by majority vote vs the board's centre line.
+// The outer fringe beyond the cleared lines is frozen; the inner mass moves.
+// If tetrisMode is off or nothing cleared, calls callback immediately.
+function animateFall(clearedRows, clearedCols, callback) {
+  if (!state.tetrisMode) { callback(); return; }
 
-  // Cells below the lowest cleared row are anchors — they don't participate.
-  const lowestCleared = Math.max(...clearedRows);
-  const frozenSet = new Set();
-  for (let r = lowestCleared + 1; r < BOARD_SIZE; r++) {
-    for (let c = 0; c < BOARD_SIZE; c++) {
-      if (state.board[r][c]) frozenSet.add(r + ',' + c);
+  let dir, frozenSet = new Set();
+
+  if (clearedRows.length > 0) {
+    // --- Row gravity (Stage 2a) ---
+    const CENTER = 5; // rows 0-4 above centre, rows 5-9 below
+    const aboveCount = clearedRows.filter(r => r < CENTER).length;
+    const belowCount = clearedRows.filter(r => r >= CENTER).length;
+    dir = aboveCount > belowCount ? 'up' : 'down'; // 'down' wins tie
+    if (dir === 'down') {
+      const boundary = Math.max(...clearedRows);
+      for (let r = boundary + 1; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+          if (state.board[r][c]) frozenSet.add(r + ',' + c);
+    } else {
+      const boundary = Math.min(...clearedRows);
+      for (let r = 0; r < boundary; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+          if (state.board[r][c]) frozenSet.add(r + ',' + c);
     }
+
+  } else if (clearedCols.length > 0) {
+    // --- Column gravity (Stage 2b) ---
+    const CENTER_C = 5; // cols 0-4 left of centre, cols 5-9 right
+    const leftCount  = clearedCols.filter(c => c < CENTER_C).length;
+    const rightCount = clearedCols.filter(c => c >= CENTER_C).length;
+    dir = leftCount > rightCount ? 'left' : 'right'; // 'right' wins tie
+    if (dir === 'right') {
+      const boundary = Math.max(...clearedCols);
+      for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = boundary + 1; c < BOARD_SIZE; c++)
+          if (state.board[r][c]) frozenSet.add(r + ',' + c);
+    } else {
+      const boundary = Math.min(...clearedCols);
+      for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < boundary; c++)
+          if (state.board[r][c]) frozenSet.add(r + ',' + c);
+    }
+
+  } else {
+    callback(); return; // nothing to animate
   }
 
   state.falling = true;
   function tick() {
     _fallTimeout = null;
-    const moved = applyGravityStep(frozenSet);
+    const moved = applyGravityStep(frozenSet, dir);
     drawBoard();
     if (moved) {
       _fallTick    = tick;
       _fallTimeout = setTimeout(tick, FALL_TICK_MS);
     } else {
-      state.falling = false;
       _fallTick = _fallTimeout = null;
-      callback();
+      boardEl.classList.add("fall-settled");
+      boardEl.addEventListener("animationend", () => boardEl.classList.remove("fall-settled"), { once: true });
+
+      // Stage 4 cascade: gravity may have completed new lines — check and clear them.
+      const { total, clearedRows: cr2, clearedCols: cc2 } = clearFullWithExplosion();
+      if (total > 0) {
+        const pts = 10 * total;
+        state.score += pts;
+        floatScore(pts);
+        updateHud();
+        // Re-enter the fall animation for the cascade; state.falling stays true.
+        animateFall(cr2, cc2, callback);
+      } else {
+        state.falling = false;
+        callback();
+      }
     }
   }
   _fallTick    = tick;
@@ -638,7 +723,7 @@ function onPointerUp(ev) {
   const c    = Math.floor((ev.clientX - br.left + gap / 2) / step);
 
   if (canPlace(cells, r, c)) {
-    const { rowCount, clearedRows } = place(cells, color, r, c);
+    const { rowCount, colCount, clearedRows, clearedCols } = place(cells, color, r, c);
     _justPlaced = null;  // clear before any animation redraws
 
     const afterSettle = () => {
@@ -651,9 +736,9 @@ function onPointerUp(ev) {
       cleanupDrag();
     };
 
-    if (!wasFalling && state.tetrisMode && rowCount > 0) {
-      // No fall was in progress — start one for the new cleared rows
-      animateFall(clearedRows, afterSettle);
+    if (!wasFalling && state.tetrisMode && (rowCount > 0 || colCount > 0)) {
+      // No fall was in progress — start one for the newly cleared lines
+      animateFall(clearedRows, clearedCols, afterSettle);
     } else {
       // Fall was paused (or tetrisMode off / no rows cleared) — finalize now;
       // cleanupDrag inside afterSettle will call resumeFall() to unpause.
