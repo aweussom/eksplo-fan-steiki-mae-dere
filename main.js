@@ -879,7 +879,9 @@ function onPointerUp(ev) {
     };
 
     if (!wasFalling && state.tetrisMode && (rowCount > 0 || colCount > 0)) {
-      // No fall was in progress — start one for the newly cleared lines
+      // No fall was in progress — clear the drag overlay immediately so the
+      // shadow doesn't persist during the fall animation, then start the fall.
+      cleanupDrag();
       animateFall(clearedRows, clearedCols, afterSettle);
     } else {
       // Fall was paused (or tetrisMode off / no rows cleared) — finalize now;
