@@ -816,6 +816,14 @@ function updatePileShadow(x, y) {
 
 function onPointerUp(ev) {
   if (!state.dragging) return;
+
+  // Remove UI overlays immediately — before any board changes — so they never
+  // persist visually during the Tetris fall animation.
+  [state.ghost, state.shadow, state.pileShadow].forEach(el => {
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  });
+  state.ghost = state.shadow = state.pileShadow = null;
+
   const wasFalling = state.falling; // true when drag interrupted an in-progress fall
 
   const { idx, cells, color, isBomb, bombType, liftOffset, snappedR, snappedC } = state.dragging;
